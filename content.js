@@ -14,3 +14,14 @@ function handleMouseOut(event) {
 
   event.target.style.outline = "";
 }
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window) return;
+
+  if (
+    event.data?.source === "screen-to-dispatch" &&
+    event.data?.type === "START_SELECTION"
+  ) {
+    selectionMode = true;
+  }
+});
