@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Screen-to-Dispatch",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Select website elements and send structured edit requests to Dispatch.",
   "permissions": [
     "activeTab",
@@ -14,12 +14,15 @@
   "background": {
     "service_worker": "background.js"
   },
-
   "content_scripts": [
-  {
-    "matches": ["<all_urls>"],
-    "js": ["content.js"]
-  }
-]
-  
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Screen-to-Dispatch"
+  },
+  "options_page": "options.html"
 }
