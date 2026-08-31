@@ -1,6 +1,3 @@
-const DEFAULT_EMAIL = "sara@prospectrdigital.com";
-const DEFAULT_ENDPOINT = "";
-
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await chrome.storage.local.get([
     "userEmail",
@@ -10,11 +7,11 @@ chrome.runtime.onInstalled.addListener(async () => {
   const updates = {};
 
   if (!settings.userEmail) {
-    updates.userEmail = DEFAULT_EMAIL;
+    updates.userEmail = "sara@prospectrdigital.com";
   }
 
   if (!settings.dispatchEndpoint) {
-    updates.dispatchEndpoint = DEFAULT_ENDPOINT;
+    updates.dispatchEndpoint = "";
   }
 
   if (Object.keys(updates).length > 0) {
@@ -26,6 +23,11 @@ chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
 
   try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["content.js"]
+    });
+
     await chrome.tabs.sendMessage(tab.id, {
       type: "START_SELECTION"
     });
@@ -59,31 +61,29 @@ async function handleEditRequest(payload) {
     "dispatchEndpoint"
   ]);
 
-  const endpoint = settings.dispatchEndpoint;
-
-  if (!endpoint) {
-    throw new Error(
-      "No Dispatch email endpoint has been configured. Open extension settings and add the endpoint."
-    );
+  if (!settings.dispatchEndpoint) {
+    return {
+      success: false,
+      error: "Email delivery is not configured yet."
+    };
   }
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(settings.dispatchEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
       ...payload,
-      submitted_by: settings.userEmail || DEFAULT_EMAIL,
+      submitted_by:
+        settings.userEmail || "sara@prospectrdigital.com",
       timestamp: new Date().toISOString()
     })
   });
 
   if (!response.ok) {
-    const responseText = await response.text();
-
     throw new Error(
-      `Email service returned ${response.status}: ${responseText}`
+      `Email service returned ${response.status}`
     );
   }
 
