@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Screen-to-Dispatch",
+  "version": "0.1.0",
+  "description": "Select website elements and send structured edit requests to Dispatch.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}
