@@ -497,14 +497,16 @@ function injectStyles() {
     }
 
     .std-modal {
-      width: 420px !important;
-      max-width: calc(100vw - 32px) !important;
-      padding: 22px !important;
-      background: white !important;
-      color: #111827 !important;
-      border-radius: 12px !important;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
-    }
+  width: 420px !important;
+  max-width: calc(100vw - 32px) !important;
+  padding: 22px !important;
+  background-color: #ffffff !important;
+  opacity: 1 !important;
+  color: #111827 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
+  isolation: isolate !important;
+}
 
     .std-header {
       display: flex !important;
