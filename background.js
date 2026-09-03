@@ -1,21 +1,12 @@
-chrome.runtime.onInstalled.addListener(async () => {
-  const settings = await chrome.storage.local.get([
-    "userEmail",
-    "dispatchEndpoint"
-  ]);
+const DEFAULT_EMAIL = "sara@prospectrdigital.com";
 
-  const updates = {};
+chrome.runtime.onInstalled.addListener(async () => {
+  const settings = await chrome.storage.local.get(["userEmail"]);
 
   if (!settings.userEmail) {
-    updates.userEmail = "sara@prospectrdigital.com";
-  }
-
-  if (!settings.dispatchEndpoint) {
-    updates.dispatchEndpoint = "";
-  }
-
-  if (Object.keys(updates).length > 0) {
-    await chrome.storage.local.set(updates);
+    await chrome.storage.local.set({
+      userEmail: DEFAULT_EMAIL
+    });
   }
 });
 
@@ -37,57 +28,23 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "SEND_EDIT_REQUEST") {
-    return;
-  }
-
-  handleEditRequest(message.payload)
-    .then((result) => sendResponse(result))
-    .catch((error) => {
-      console.error("Failed to send edit request:", error);
-
+  if (message.type === "GET_SETTINGS") {
+    chrome.storage.local.get(["userEmail"]).then((settings) => {
       sendResponse({
-        success: false,
-        error: error.message
+        userEmail: settings.userEmail || DEFAULT_EMAIL
       });
     });
 
-  return true;
+    return true;
+  }
+
+  if (message.type === "GET_SUBMITTER") {
+    chrome.storage.local.get(["userEmail"]).then((settings) => {
+      sendResponse({
+        userEmail: settings.userEmail || DEFAULT_EMAIL
+      });
+    });
+
+    return true;
+  }
 });
-
-async function handleEditRequest(payload) {
-  const settings = await chrome.storage.local.get([
-    "userEmail",
-    "dispatchEndpoint"
-  ]);
-
-  if (!settings.dispatchEndpoint) {
-    return {
-      success: false,
-      error: "Email delivery is not configured yet."
-    };
-  }
-
-  const response = await fetch(settings.dispatchEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      ...payload,
-      submitted_by:
-        settings.userEmail || "sara@prospectrdigital.com",
-      timestamp: new Date().toISOString()
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Email service returned ${response.status}`
-    );
-  }
-
-  return {
-    success: true
-  };
-}
