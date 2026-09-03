@@ -1,9 +1,9 @@
 let selectionMode = false;
-let selectedElement = null;
 let hoveredElement = null;
-let selectionOverlay = null;
+let selectionNotice = null;
 
 const STYLE_ID = "screen-to-dispatch-styles";
+const ROOT_ID = "screen-to-dispatch-root";
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "START_SELECTION") {
@@ -21,8 +21,6 @@ function startSelectionMode() {
 
   injectStyles();
 
-  document.body.style.cursor = "crosshair";
-
   document.addEventListener("mouseover", handleMouseOver, true);
   document.addEventListener("mouseout", handleMouseOut, true);
   document.addEventListener("click", handleElementClick, true);
@@ -34,8 +32,6 @@ function startSelectionMode() {
 function stopSelectionMode() {
   selectionMode = false;
 
-  document.body.style.cursor = "";
-
   document.removeEventListener("mouseover", handleMouseOver, true);
   document.removeEventListener("mouseout", handleMouseOut, true);
   document.removeEventListener("click", handleElementClick, true);
@@ -43,9 +39,9 @@ function stopSelectionMode() {
 
   clearHover();
 
-  if (selectionOverlay) {
-    selectionOverlay.remove();
-    selectionOverlay = null;
+  if (selectionNotice) {
+    selectionNotice.remove();
+    selectionNotice = null;
   }
 }
 
@@ -54,27 +50,18 @@ function handleMouseOver(event) {
 
   const element = getSelectableElement(event.target);
 
-  if (!element) return;
-  if (isExtensionElement(element)) return;
+  if (!element || isExtensionElement(element)) return;
 
   clearHover();
 
   hoveredElement = element;
-
   hoveredElement.classList.add("std-hover-highlight");
 }
 
 function handleMouseOut(event) {
-  if (!selectionMode) return;
+  if (!selectionMode || !hoveredElement) return;
 
-  const element = getSelectableElement(event.target);
-
-  if (!element) return;
-
-  if (
-    hoveredElement === element &&
-    !element.contains(event.relatedTarget)
-  ) {
+  if (!hoveredElement.contains(event.relatedTarget)) {
     clearHover();
   }
 }
@@ -84,20 +71,15 @@ function handleElementClick(event) {
 
   const element = getSelectableElement(event.target);
 
-  if (!element) return;
-  if (isExtensionElement(element)) return;
+  if (!element || isExtensionElement(element)) return;
 
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
 
-  selectedElement = element;
-
-  clearHover();
-
   stopSelectionMode();
 
-  showEditPopup(selectedElement);
+  showEditPopup(element);
 }
 
 function handleKeyDown(event) {
@@ -116,7 +98,7 @@ function getSelectableElement(target) {
 }
 
 function isExtensionElement(element) {
-  return Boolean(element.closest("#screen-to-dispatch-root"));
+  return Boolean(element.closest(`#${ROOT_ID}`));
 }
 
 function clearHover() {
@@ -125,40 +107,40 @@ function clearHover() {
     hoveredElement = null;
   }
 
-  document
-    .querySelectorAll(".std-hover-highlight")
-    .forEach((element) => {
-      element.classList.remove("std-hover-highlight");
-    });
+  document.querySelectorAll(".std-hover-highlight").forEach((element) => {
+    element.classList.remove("std-hover-highlight");
+  });
 }
 
 function showSelectionNotice() {
-  if (selectionOverlay) {
-    selectionOverlay.remove();
+  if (selectionNotice) {
+    selectionNotice.remove();
   }
 
-  selectionOverlay = document.createElement("div");
-  selectionOverlay.id = "screen-to-dispatch-selection-notice";
+  selectionNotice = document.createElement("div");
+  selectionNotice.id = "screen-to-dispatch-selection-notice";
 
-  selectionOverlay.innerHTML = `
+  selectionNotice.innerHTML = `
     <div class="std-notice">
       <strong>Screen-to-Dispatch</strong>
       <span>Click an element to select it · Press ESC to cancel</span>
     </div>
   `;
 
-  document.body.appendChild(selectionOverlay);
+  document.body.appendChild(selectionNotice);
 }
 
 function showEditPopup(element) {
-  const existing = document.getElementById("screen-to-dispatch-root");
+  const existing = document.getElementById(ROOT_ID);
 
   if (existing) {
     existing.remove();
   }
 
+  injectStyles();
+
   const root = document.createElement("div");
-  root.id = "screen-to-dispatch-root";
+  root.id = ROOT_ID;
 
   const tag = element.tagName.toUpperCase();
   const currentContent = getCurrentContent(element);
@@ -166,15 +148,14 @@ function showEditPopup(element) {
   root.innerHTML = `
     <div class="std-modal-backdrop">
       <div class="std-modal" role="dialog" aria-modal="true">
+
         <div class="std-header">
           <div>
             <div class="std-title">Screen-to-Dispatch</div>
             <div class="std-subtitle">Site edit request</div>
           </div>
 
-          <button type="button" class="std-close" id="std-close">
-            ×
-          </button>
+          <button type="button" class="std-close" id="std-close">×</button>
         </div>
 
         <div class="std-field">
@@ -191,7 +172,7 @@ function showEditPopup(element) {
 
         <div class="std-field">
           <label for="std-edit-request">
-            What should it say / what should change?
+            What should say / what should change?
           </label>
 
           <textarea
@@ -215,9 +196,16 @@ function showEditPopup(element) {
 
         <div class="std-error" id="std-error"></div>
 
-        <button type="button" class="std-send" id="std-send">
-          Send to Dispatch
-        </button>
+        <div class="std-actions">
+          <button type="button" class="std-copy" id="std-copy">
+            Copy JSON
+          </button>
+
+          <button type="button" class="std-send" id="std-send">
+            Prepare Request
+          </button>
+        </div>
+
       </div>
     </div>
   `;
@@ -231,40 +219,36 @@ function showEditPopup(element) {
     });
 
   document
-    .getElementById("std-send")
+    .getElementById("std-copy")
     .addEventListener("click", () => {
-      submitEditRequest(element, root);
+      copyPayload(element);
     });
 
   document
-    .getElementById("std-edit-request")
-    .focus();
+    .getElementById("std-send")
+    .addEventListener("click", () => {
+      prepareRequest(element, root);
+    });
+
+  document.getElementById("std-edit-request").focus();
 }
 
-async function submitEditRequest(element, root) {
+async function getPayload(element) {
   const editRequest = document
     .getElementById("std-edit-request")
-    .value
-    .trim();
+    ?.value
+    .trim() || "";
 
   const context = document
     .getElementById("std-context")
-    .value
-    .trim();
+    ?.value
+    .trim() || "";
 
-  const errorElement = document.getElementById("std-error");
-  const sendButton = document.getElementById("std-send");
+  const settings = await chrome.runtime.sendMessage({
+    type: "GET_SUBMITTER"
+  });
 
-  if (!editRequest) {
-    errorElement.textContent = "Please describe the requested change.";
-    return;
-  }
-
-  sendButton.disabled = true;
-  sendButton.textContent = "Sending...";
-  errorElement.textContent = "";
-
-  const payload = {
+  return {
     type: "site_edit_request",
 
     url: window.location.href,
@@ -278,38 +262,109 @@ async function submitEditRequest(element, root) {
 
     edit_request: editRequest,
 
-    context: context
+    context: context,
+
+    submitted_by:
+      settings?.userEmail || "sara@prospectrdigital.com",
+
+    timestamp: new Date().toISOString()
   };
+}
+
+async function copyPayload(element) {
+  const errorElement = document.getElementById("std-error");
+
+  const editRequest = document
+    .getElementById("std-edit-request")
+    ?.value
+    .trim();
+
+  if (!editRequest) {
+    errorElement.textContent = "Please describe the requested change.";
+    return;
+  }
 
   try {
-    const result = await chrome.runtime.sendMessage({
-      type: "SEND_EDIT_REQUEST",
-      payload
-    });
+    const payload = await getPayload(element);
 
-    if (!result || !result.success) {
-      throw new Error(
-        result?.error || "The request could not be sent."
-      );
-    }
+    await navigator.clipboard.writeText(
+      JSON.stringify(payload, null, 2)
+    );
+
+    errorElement.style.color = "#16a34a";
+    errorElement.textContent = "JSON copied to clipboard.";
+
+    setTimeout(() => {
+      errorElement.textContent = "";
+      errorElement.style.color = "";
+    }, 2000);
+
+  } catch (error) {
+    errorElement.style.color = "#dc2626";
+    errorElement.textContent =
+      "Could not copy the request.";
+  }
+}
+
+async function prepareRequest(element, root) {
+  const errorElement = document.getElementById("std-error");
+  const sendButton = document.getElementById("std-send");
+
+  const editRequest = document
+    .getElementById("std-edit-request")
+    .value
+    .trim();
+
+  if (!editRequest) {
+    errorElement.textContent = "Please describe the requested change.";
+    return;
+  }
+
+  sendButton.disabled = true;
+  sendButton.textContent = "Preparing...";
+
+  try {
+    const payload = await getPayload(element);
+
+    console.log(
+      "Screen-to-Dispatch payload:",
+      payload
+    );
 
     root.innerHTML = `
       <div class="std-modal-backdrop">
         <div class="std-modal std-success-modal">
+
           <div class="std-success-icon">✓</div>
 
-          <div class="std-title">Sent.</div>
+          <div class="std-title">Request Ready</div>
 
           <div class="std-success-message">
-            Dispatch will action this.
+            The structured request has been prepared for Dispatch.
           </div>
 
-          <button type="button" class="std-send" id="std-done">
+          <button type="button" class="std-send" id="std-copy-final">
+            Copy JSON
+          </button>
+
+          <button type="button" class="std-secondary" id="std-done">
             Done
           </button>
+
         </div>
       </div>
     `;
+
+    document
+      .getElementById("std-copy-final")
+      .addEventListener("click", async () => {
+        await navigator.clipboard.writeText(
+          JSON.stringify(payload, null, 2)
+        );
+
+        document.getElementById("std-copy-final").textContent =
+          "Copied ✓";
+      });
 
     document
       .getElementById("std-done")
@@ -319,9 +374,10 @@ async function submitEditRequest(element, root) {
 
   } catch (error) {
     sendButton.disabled = false;
-    sendButton.textContent = "Send to Dispatch";
+    sendButton.textContent = "Prepare Request";
 
-    errorElement.textContent = error.message;
+    errorElement.textContent =
+      error.message || "Could not prepare request.";
   }
 }
 
@@ -349,10 +405,12 @@ function getXPath(element) {
   }
 
   const parts = [];
-
   let current = element;
 
-  while (current && current.nodeType === Node.ELEMENT_NODE) {
+  while (
+    current &&
+    current.nodeType === Node.ELEMENT_NODE
+  ) {
     let index = 1;
     let sibling = current.previousElementSibling;
 
@@ -384,7 +442,6 @@ function getCssSelector(element) {
   }
 
   const parts = [];
-
   let current = element;
 
   while (
@@ -394,34 +451,33 @@ function getCssSelector(element) {
   ) {
     let selector = current.tagName.toLowerCase();
 
-    if (current.classList.length > 0) {
-      const classes = Array.from(current.classList)
-        .filter((className) => {
-          return !className.startsWith("std-");
-        })
-        .slice(0, 2);
+    const classes = Array.from(current.classList)
+      .filter((className) => !className.startsWith("std-"))
+      .slice(0, 2);
 
-      if (classes.length > 0) {
-        selector += classes
-          .map((className) => `.${CSS.escape(className)}`)
-          .join("");
-      }
+    if (classes.length > 0) {
+      selector += classes
+        .map((className) => `.${CSS.escape(className)}`)
+        .join("");
     }
 
     const parent = current.parentElement;
 
     if (parent) {
       const sameTagSiblings = Array.from(parent.children)
-        .filter((child) => child.tagName === current.tagName);
+        .filter(
+          (child) => child.tagName === current.tagName
+        );
 
       if (sameTagSiblings.length > 1) {
-        const index = sameTagSiblings.indexOf(current) + 1;
+        const index =
+          sameTagSiblings.indexOf(current) + 1;
+
         selector += `:nth-of-type(${index})`;
       }
     }
 
     parts.unshift(selector);
-
     current = parent;
   }
 
@@ -469,12 +525,12 @@ function injectStyles() {
       background: #111827 !important;
       color: white !important;
       border-radius: 8px !important;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,.2) !important;
       font-size: 13px !important;
     }
 
     .std-notice span {
-      opacity: 0.8 !important;
+      opacity: .8 !important;
     }
 
     #screen-to-dispatch-root {
@@ -490,23 +546,21 @@ function injectStyles() {
       position: fixed !important;
       inset: 0 !important;
       z-index: 2147483647 !important;
-      background: rgba(0, 0, 0, 0.35) !important;
+      background: rgba(0,0,0,.35) !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
     }
 
     .std-modal {
-  width: 420px !important;
-  max-width: calc(100vw - 32px) !important;
-  padding: 22px !important;
-  background-color: #ffffff !important;
-  opacity: 1 !important;
-  color: #111827 !important;
-  border-radius: 12px !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
-  isolation: isolate !important;
-}
+      width: 420px !important;
+      max-width: calc(100vw - 32px) !important;
+      padding: 22px !important;
+      background: white !important;
+      color: #111827 !important;
+      border-radius: 12px !important;
+      box-shadow: 0 20px 60px rgba(0,0,0,.3) !important;
+    }
 
     .std-header {
       display: flex !important;
@@ -586,24 +640,44 @@ function injectStyles() {
       outline-offset: 1px !important;
     }
 
-    .std-send {
-      width: 100% !important;
-      border: none !important;
+    .std-actions {
+      display: flex !important;
+      gap: 8px !important;
+    }
+
+    .std-send,
+    .std-copy,
+    .std-secondary {
       border-radius: 7px !important;
       padding: 11px 16px !important;
-      background: #111827 !important;
-      color: white !important;
       font-size: 13px !important;
       font-weight: 600 !important;
       cursor: pointer !important;
     }
 
-    .std-send:hover {
-      opacity: 0.9 !important;
+    .std-send {
+      flex: 1 !important;
+      border: none !important;
+      background: #111827 !important;
+      color: white !important;
+    }
+
+    .std-copy {
+      border: 1px solid #d1d5db !important;
+      background: white !important;
+      color: #111827 !important;
+    }
+
+    .std-secondary {
+      width: 100% !important;
+      margin-top: 8px !important;
+      border: 1px solid #d1d5db !important;
+      background: white !important;
+      color: #111827 !important;
     }
 
     .std-send:disabled {
-      opacity: 0.5 !important;
+      opacity: .5 !important;
       cursor: wait !important;
     }
 
@@ -636,6 +710,10 @@ function injectStyles() {
       margin: 8px 0 22px !important;
       color: #6b7280 !important;
       font-size: 13px !important;
+    }
+
+    .std-success-modal .std-send {
+      width: 100% !important;
     }
   `;
 
